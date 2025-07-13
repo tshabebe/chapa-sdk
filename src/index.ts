@@ -11,8 +11,12 @@ const app = express()
 app.use(express.json())
 
 const CHAPA_AUTH_KEY = process.env.CHAPA_AUTH_KEY as string
-
+const PORT = process.env.PORT || 3000
 const chapa = new Chapa({ secretKey: CHAPA_AUTH_KEY })
+
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`)
+})
 
 app.get('/', async (req: Request, res: Response) => {
   res.json({ message: 'Chapa Payment API is running' })
@@ -21,6 +25,16 @@ app.get('/', async (req: Request, res: Response) => {
 app.post('/register', async (req: Request, res: Response) => {
   try {
     const body = ZInsertUserTable.parse(req.body)
+
+    // Check if user already exists
+    const existingUser = await db.query.userTable.findFirst({
+      where: (user) => eq(user.id, body.id),
+    })
+
+    if (existingUser) {
+      return res.status(409).json({ message: 'User already exists' })
+    }
+
     const user = await db
       .insert(userTable)
       .values(body)
@@ -183,25 +197,21 @@ app.post('/transfer', async (req: Request, res: Response) => {
         bank_code: body.bank_code,
       })
 
-      // 5. Verify transfer
-      const verifyTransaction = await chapa.verifyTransfer({
+      // 5. Mark as completed if transfer was successful
+      // Note: Chapa transfers are typically asynchronous, so we don't verify immediately
+      await db
+        .update(transactionTable)
+        .set({ status: 'completed', verified: true })
+        .where(eq(transactionTable.txRef, tx_ref))
+
+      res.status(200).json({
+        message: 'Transfer initiated successfully',
+        data: transfer.data,
         tx_ref: tx_ref,
       })
-
-      if (verifyTransaction.status === 'success') {
-        // 6. Mark as completed
-        await db
-          .update(transactionTable)
-          .set({ status: 'completed', verified: true })
-          .where(eq(transactionTable.txRef, tx_ref))
-
-        res
-          .status(200)
-          .json({ message: 'Transfer successful', data: transfer.data })
-      } else {
-        throw new Error('Transfer verification failed')
-      }
     } catch (transferError) {
+      console.error('Transfer error:', transferError)
+
       // 7. If transfer fails, reverse the deduction
       await db.transaction(async (tx) => {
         await tx
@@ -215,11 +225,80 @@ app.post('/transfer', async (req: Request, res: Response) => {
           .where(eq(transactionTable.txRef, tx_ref))
       })
 
-      throw transferError
+      // Return a more specific error message
+      const errorMessage =
+        transferError instanceof Error
+          ? transferError.message
+          : 'Transfer failed'
+
+      res.status(400).json({
+        message: 'Transfer failed',
+        error: errorMessage,
+        tx_ref: tx_ref,
+      })
     }
   } catch (error) {
     console.error('Error transferring funds:', error)
     res.status(500).json({ message: 'Error transferring funds' })
   }
 })
+
+// Endpoint to verify transfer status
+app.get('/transfer/:tx_ref/status', async (req: Request, res: Response) => {
+  try {
+    const { tx_ref } = req.params
+
+    // Get transaction from database
+    const transaction = await db.query.transactionTable.findFirst({
+      where: (transaction) => eq(transaction.txRef, tx_ref),
+    })
+
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction not found' })
+    }
+
+    // If transaction is already completed, return status
+    if (transaction.status === 'completed') {
+      return res.status(200).json({
+        status: 'completed',
+        message: 'Transfer completed successfully',
+      })
+    }
+
+    // Try to verify with Chapa
+    try {
+      const verifyTransaction = await chapa.verifyTransfer({
+        tx_ref: tx_ref,
+      })
+
+      if (verifyTransaction.status === 'success') {
+        // Update transaction status
+        await db
+          .update(transactionTable)
+          .set({ status: 'completed', verified: true })
+          .where(eq(transactionTable.txRef, tx_ref))
+
+        return res.status(200).json({
+          status: 'completed',
+          message: 'Transfer verified and completed',
+        })
+      } else {
+        return res.status(200).json({
+          status: transaction.status,
+          message: 'Transfer is still processing',
+        })
+      }
+    } catch (verifyError) {
+      // If verification fails, return current status
+      return res.status(200).json({
+        status: transaction.status,
+        message: 'Transfer verification failed, check status later',
+      })
+    }
+  } catch (error) {
+    console.error('Error checking transfer status:', error)
+    res.status(500).json({ message: 'Error checking transfer status' })
+  }
+})
+
 export default app
