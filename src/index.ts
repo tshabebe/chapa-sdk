@@ -3,15 +3,21 @@ import { db } from '../db'
 import { transactionTable, userTable, ZInsertUserTable } from '../db/schema'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
+import crypto from 'crypto'
 import { ZTransfer, ZVerifyResponse } from './schema'
 import express, { Request, Response } from 'express'
 import { TransactionReconciliationService } from './services/transaction-reconciliation'
 
 const app = express()
 
+// Raw body middleware for webhook signature verification
+app.use('/webhook', express.raw({ type: 'application/json' }))
+// JSON parsing for all other routes
 app.use(express.json())
 
 const CHAPA_AUTH_KEY = process.env.CHAPA_AUTH_KEY as string
+const RETURN_URL = process.env.RETURN_URL || 'http://localhost:3000'
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET
 const PORT = process.env.PORT || 3000
 const chapa = new Chapa({ secretKey: CHAPA_AUTH_KEY })
 
@@ -24,7 +30,7 @@ app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`)
 
   // Start the reconciliation service
-  reconciliationService.start()
+  // reconciliationService.start()
 })
 
 app.get('/', async (req: Request, res: Response) => {
@@ -87,6 +93,7 @@ app.post('/', async (req: Request, res: Response) => {
       amount: body.amount.toString(),
       currency: body.currency,
       tx_ref: tx_ref,
+      return_url: RETURN_URL,
     })
 
     res.json(url.data)
@@ -98,7 +105,30 @@ app.post('/', async (req: Request, res: Response) => {
 
 app.post('/webhook', async (req: Request, res: Response) => {
   try {
-    const body = ZVerifyResponse.parse(req.body)
+    // Get the raw body as string for signature verification
+    const rawBody = req.body.toString('utf8')
+
+    // Generate hash from raw body
+    const hash = crypto
+      .createHmac('sha256', WEBHOOK_SECRET as string)
+      .update(rawBody)
+      .digest('hex')
+
+    // Check both signature headers
+    const chapaSignature =
+      req.headers['chapa-signature'] || req.headers['Chapa-Signature']
+    const xChapaSignature =
+      req.headers['x-chapa-signature'] || req.headers['X-Chapa-Signature']
+
+    const isValidSignature = hash === chapaSignature || hash === xChapaSignature
+
+    if (!isValidSignature) {
+      console.error('Signature verification failed')
+      return res.status(401).json({ message: 'Something went wrong' })
+    }
+
+    // Parse the body for processing
+    const body = ZVerifyResponse.parse(JSON.parse(rawBody))
     if (!body.tx_ref) {
       return res
         .status(400)
