@@ -7,6 +7,7 @@ import crypto from 'crypto'
 import { ZTransfer, ZVerifyResponse } from './schema'
 import express, { Request, Response } from 'express'
 import { TransactionReconciliationService } from './services/transaction-reconciliation'
+import { bot } from './telegram-bot'
 
 const app = express()
 
@@ -26,11 +27,26 @@ const reconciliationService = new TransactionReconciliationService(
   CHAPA_AUTH_KEY,
 )
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`)
+// Start both the API server and Telegram bot
+async function startServer() {
+  // Start the Express server
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`)
+  })
 
   // Start the reconciliation service
-  // reconciliationService.start()
+  reconciliationService.start()
+
+  // Start the Telegram bot
+  console.log('Starting Telegram bot...')
+  await bot.start()
+  console.log('Telegram bot is running!')
+}
+
+// Start the server
+startServer().catch((error) => {
+  console.error('Failed to start server:', error)
+  process.exit(1)
 })
 
 app.get('/', async (req: Request, res: Response) => {
