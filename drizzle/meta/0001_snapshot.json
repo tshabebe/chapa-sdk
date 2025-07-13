@@ -1,6 +1,6 @@
 {
-  "id": "82c17174-b9f3-43c8-a0b8-6ed41febdc69",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "a19973f7-873a-410f-bdb5-bc7fbe4ee7df",
+  "prevId": "cdbe8a6a-e44d-45d1-b280-c785d25e2fd1",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -20,8 +20,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "number": {
-          "name": "number",
+        "balance": {
+          "name": "balance",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
@@ -62,9 +62,9 @@
       "columns": {
         "id": {
           "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false,
           "default": "gen_random_uuid()"
         },
         "tx_ref": {
@@ -73,9 +73,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "type": {
-          "name": "type",
-          "type": "type",
+        "transaction_type": {
+          "name": "transaction_type",
+          "type": "transaction_type",
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": false,
@@ -90,7 +90,7 @@
         },
         "status": {
           "name": "status",
-          "type": "status",
+          "type": "transaction_status",
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": false,
@@ -148,7 +148,27 @@
       "isRLSEnabled": false
     }
   },
-  "enums": {},
+  "enums": {
+    "public.transaction_status": {
+      "name": "transaction_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "processing",
+        "completed",
+        "failed",
+        "reversed"
+      ]
+    },
+    "public.transaction_type": {
+      "name": "transaction_type",
+      "schema": "public",
+      "values": [
+        "deposit",
+        "withdrawal"
+      ]
+    }
+  },
   "schemas": {},
   "sequences": {},
   "roles": {},

@@ -1,6 +1,6 @@
 {
-  "id": "00000000-0000-0000-0000-000000000000",
-  "prevId": "",
+  "id": "cdbe8a6a-e44d-45d1-b280-c785d25e2fd1",
+  "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -17,6 +17,12 @@
         "name": {
           "name": "name",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "number": {
+          "name": "number",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -39,21 +45,15 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false,
-          "default": "CURRENT_TIMESTAMP"
-        },
-        "number": {
-          "name": "number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
+          "default": "current_timestamp"
         }
       },
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {},
       "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.transaction": {
@@ -62,9 +62,9 @@
       "columns": {
         "id": {
           "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false,
           "default": "gen_random_uuid()"
         },
         "tx_ref": {
@@ -72,6 +72,29 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "transaction_type": {
+          "name": "transaction_type",
+          "type": "transaction_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'deposit'"
+        },
+        "verified": {
+          "name": "verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "status": {
+          "name": "status",
+          "type": "transaction_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'pending'"
         },
         "user_id": {
           "name": "user_id",
@@ -91,14 +114,7 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false,
-          "default": "CURRENT_TIMESTAMP"
-        },
-        "verified": {
-          "name": "verified",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false,
-          "default": false
+          "default": "current_timestamp"
         }
       },
       "indexes": {},
@@ -107,7 +123,6 @@
           "name": "transaction_user_id_user_id_fk",
           "tableFrom": "transaction",
           "tableTo": "user",
-          "schemaTo": "public",
           "columnsFrom": [
             "user_id"
           ],
@@ -121,30 +136,47 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "transaction_tx_ref_unique": {
+          "name": "transaction_tx_ref_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "tx_ref"
-          ],
-          "nullsNotDistinct": false,
-          "name": "transaction_tx_ref_unique"
+          ]
         }
       },
-      "checkConstraints": {},
       "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },
-  "enums": {},
+  "enums": {
+    "public.transaction_status": {
+      "name": "transaction_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "processing",
+        "completed",
+        "failed",
+        "reversed"
+      ]
+    },
+    "public.transaction_type": {
+      "name": "transaction_type",
+      "schema": "public",
+      "values": [
+        "deposit",
+        "withdrawal"
+      ]
+    }
+  },
   "schemas": {},
   "sequences": {},
   "roles": {},
   "policies": {},
   "views": {},
   "_meta": {
+    "columns": {},
     "schemas": {},
-    "tables": {},
-    "columns": {}
-  },
-  "internal": {
     "tables": {}
   }
 }

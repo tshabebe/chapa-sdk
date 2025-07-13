@@ -10,9 +10,12 @@ import { createInsertSchema } from 'drizzle-zod'
 import { userTable } from './auth'
 import { relations, sql } from 'drizzle-orm'
 
-const transactionType = pgEnum('type', ['deposit', 'withdrawal'])
+export const transactionType = pgEnum('transaction_type', [
+  'deposit',
+  'withdrawal',
+])
 
-const transactionStatus = pgEnum('status', [
+export const transactionStatus = pgEnum('transaction_status', [
   'pending', // Initial state
   'processing', // Chapa transfer initiated
   'completed', // Transfer successful, balance updated

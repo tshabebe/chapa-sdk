@@ -1,35 +1,40 @@
-import { Hono } from 'hono'
 import { Chapa } from 'chapa-nodejs'
 import { db } from '../db'
 import { transactionTable, userTable, ZInsertUserTable } from '../db/schema'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { ZTransfer, ZVerifyResponse } from './schema'
+import express, { Request, Response } from 'express'
+
+const app = express()
+
+app.use(express.json())
 
 const CHAPA_AUTH_KEY = process.env.CHAPA_AUTH_KEY as string
 
-const app = new Hono()
 const chapa = new Chapa({ secretKey: CHAPA_AUTH_KEY })
 
-app.get('/', async (c) => {
-  return c.json({ message: 'Chapa Payment API is running' })
+app.get('/', async (req: Request, res: Response) => {
+  res.json({ message: 'Chapa Payment API is running' })
 })
 
-app.post('/register', async (c) => {
+app.post('/register', async (req: Request, res: Response) => {
   try {
-    const body = ZInsertUserTable.parse(await c.req.json())
+    const body = ZInsertUserTable.parse(req.body)
     const user = await db
       .insert(userTable)
       .values(body)
       .returning({ id: userTable.id, name: userTable.name })
-    return c.json({ message: 'User registered successfully', data: user }, 202)
+    res
+      .status(202)
+      .json({ message: 'User registered successfully', data: user })
   } catch (error) {
     console.error('Error inserting user:', error)
-    return c.json({ message: 'Error registering user' }, 500)
+    res.status(500).json({ message: 'Error registering user' })
   }
 })
 
-app.post('/', async (c) => {
+app.post('/', async (req: Request, res: Response) => {
   try {
     // sanitizing and validating input
     const body = ZInsertUserTable.pick({ id: true })
@@ -37,14 +42,14 @@ app.post('/', async (c) => {
         amount: z.number(),
         currency: z.enum(['ETB', 'USD']).default('ETB'),
       })
-      .parse(await c.req.json())
+      .parse(req.body)
 
     const user = await db.query.userTable.findFirst({
       where: (user) => eq(user.id, body.id),
     })
 
     if (!user) {
-      return c.json({ message: 'User not found' }, 404)
+      return res.status(404).json({ message: 'User not found' })
     }
 
     const tx_ref = await chapa.genTxRef()
@@ -61,18 +66,20 @@ app.post('/', async (c) => {
       tx_ref: tx_ref,
     })
 
-    return c.json(url.data)
+    res.json(url.data)
   } catch (err) {
     console.error('Error initializing transaction:', err)
-    return c.json({ message: 'Error initializing transaction' }, 500)
+    res.status(500).json({ message: 'Error initializing transaction' })
   }
 })
 
-app.post('/webhook', async (c) => {
+app.post('/webhook', async (req: Request, res: Response) => {
   try {
-    const body = ZVerifyResponse.parse(await c.req.json())
+    const body = ZVerifyResponse.parse(req.body)
     if (!body.tx_ref) {
-      return c.json({ message: 'Transaction reference not found' }, 400)
+      return res
+        .status(400)
+        .json({ message: 'Transaction reference not found' })
     }
 
     console.log(body.tx_ref)
@@ -82,7 +89,7 @@ app.post('/webhook', async (c) => {
     })
 
     if (response.status !== 'success') {
-      return c.json({ message: 'Transaction failed' }, 400)
+      return res.status(400).json({ message: 'Transaction failed' })
     }
 
     // get transaction
@@ -99,7 +106,7 @@ app.post('/webhook', async (c) => {
     })
 
     if (transaction?.verified) {
-      return c.json({ message: 'Transaction already verified' }, 200)
+      return res.status(200).json({ message: 'Transaction already verified' })
     }
 
     await db.transaction(async (tx) => {
@@ -118,16 +125,16 @@ app.post('/webhook', async (c) => {
         .where(eq(transactionTable.txRef, body.tx_ref!))
     })
 
-    return c.json({ message: 'Transaction verified successfully' }, 200)
+    res.status(200).json({ message: 'Transaction verified successfully' })
   } catch (error) {
     console.error('Error verifying webhook signature:', error)
-    return c.json({ message: 'Error verifying webhook signature' }, 500)
+    res.status(500).json({ message: 'Error verifying webhook signature' })
   }
 })
 
-app.post('/transfer', async (c) => {
+app.post('/transfer', async (req: Request, res: Response) => {
   try {
-    const body = ZTransfer.parse(await c.req.json())
+    const body = ZTransfer.parse(req.body)
 
     // 1. Check balance and create pending transaction
     const user = await db.query.userTable.findFirst({
@@ -135,11 +142,11 @@ app.post('/transfer', async (c) => {
     })
 
     if (!user) {
-      return c.json({ message: 'User not found' }, 404)
+      return res.status(404).json({ message: 'User not found' })
     }
 
     if (user.balance && user.balance < body.amount) {
-      return c.json({ message: 'Insufficient balance' }, 400)
+      return res.status(400).json({ message: 'Insufficient balance' })
     }
 
     const tx_ref = await chapa.genTxRef()
@@ -148,7 +155,7 @@ app.post('/transfer', async (c) => {
     await db.insert(transactionTable).values({
       txRef: tx_ref,
       userId: body.user_id,
-      type: 'withdrawal',
+      transactionType: 'withdrawal',
       status: 'pending',
     })
 
@@ -188,10 +195,9 @@ app.post('/transfer', async (c) => {
           .set({ status: 'completed', verified: true })
           .where(eq(transactionTable.txRef, tx_ref))
 
-        return c.json(
-          { message: 'Transfer successful', data: transfer.data },
-          200,
-        )
+        res
+          .status(200)
+          .json({ message: 'Transfer successful', data: transfer.data })
       } else {
         throw new Error('Transfer verification failed')
       }
@@ -213,7 +219,7 @@ app.post('/transfer', async (c) => {
     }
   } catch (error) {
     console.error('Error transferring funds:', error)
-    return c.json({ message: 'Error transferring funds' }, 500)
+    res.status(500).json({ message: 'Error transferring funds' })
   }
 })
 export default app
