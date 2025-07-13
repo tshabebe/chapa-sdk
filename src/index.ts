@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { ZTransfer, ZVerifyResponse } from './schema'
 import express, { Request, Response } from 'express'
+import { TransactionReconciliationService } from './services/transaction-reconciliation'
 
 const app = express()
 
@@ -14,8 +15,16 @@ const CHAPA_AUTH_KEY = process.env.CHAPA_AUTH_KEY as string
 const PORT = process.env.PORT || 3000
 const chapa = new Chapa({ secretKey: CHAPA_AUTH_KEY })
 
+// Initialize transaction reconciliation service
+const reconciliationService = new TransactionReconciliationService(
+  CHAPA_AUTH_KEY,
+)
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`)
+
+  // Start the reconciliation service
+  reconciliationService.start()
 })
 
 app.get('/', async (req: Request, res: Response) => {
@@ -300,5 +309,44 @@ app.get('/transfer/:tx_ref/status', async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Error checking transfer status' })
   }
 })
+
+// Endpoint to check reconciliation service status
+app.get('/admin/reconciliation/status', async (req: Request, res: Response) => {
+  try {
+    const status = reconciliationService.getStatus()
+    res.status(200).json({
+      message: 'Reconciliation service status',
+      data: status,
+    })
+  } catch (error) {
+    console.error('Error getting reconciliation status:', error)
+    res.status(500).json({ message: 'Error getting reconciliation status' })
+  }
+})
+
+// Endpoint to manually trigger reconciliation (admin only)
+app.post(
+  '/admin/reconciliation/trigger',
+  async (req: Request, res: Response) => {
+    try {
+      // This would typically check for admin authentication
+      // For now, we'll just trigger the reconciliation
+
+      // Stop current service
+      reconciliationService.stop()
+
+      // Start it again (this will run reconciliation immediately)
+      reconciliationService.start()
+
+      res.status(200).json({
+        message: 'Reconciliation triggered successfully',
+        data: reconciliationService.getStatus(),
+      })
+    } catch (error) {
+      console.error('Error triggering reconciliation:', error)
+      res.status(500).json({ message: 'Error triggering reconciliation' })
+    }
+  },
+)
 
 export default app
